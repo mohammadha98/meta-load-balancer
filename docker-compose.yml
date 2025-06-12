@@ -1,0 +1,111 @@
+version: '3.8'
+
+services:
+  svc1:
+    build:
+      context: ./services/svc1
+    networks:
+      - app-network
+
+  svc2:
+    build:
+      context: ./services/svc2
+    networks:
+      - app-network
+
+  svc3:
+    build:
+      context: ./services/svc3
+    networks:
+      - app-network
+
+  nginx:
+    build:
+      context: ./nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./lb-conf/algo.conf:/etc/nginx/conf.d/algo.conf
+    depends_on:
+      - svc1
+      - svc2
+      - svc3
+    networks:
+      - app-network
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    networks:
+      - app-network
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.ignored-mount-points=^/(sys|proc|dev|host|etc)($$|/)'
+    networks:
+      - app-network
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    ports:
+      - "8080:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    networks:
+      - app-network
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+    volumes:
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+    networks:
+      - app-network
+
+  meta-lb:
+    build:
+      context: ./meta-lb
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./lb-conf:/etc/nginx/conf.d
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - prometheus
+      - nginx
+    networks:
+      - app-network
+
+  locust:
+    build:
+      context: ./locust
+    ports:
+      - "8089:8089"
+    environment:
+      - LOCUST_HOST=http://nginx
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
