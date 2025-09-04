@@ -1,5 +1,6 @@
+prometheus-api-client
 prometheus-client==0.16.0
-requests==2.28.2
+requests
 python-dotenv==1.0.0
 scikit-learn==1.2.2
 numpy==1.24.3

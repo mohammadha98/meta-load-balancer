@@ -1,4 +1,3 @@
-version: '3.8'
 
 services:
   svc1:
@@ -19,13 +18,13 @@ services:
     networks:
       - app-network
 
-  nginx:
+  lb:
     build:
-      context: ./nginx
+      context: ./lb
     ports:
       - "80:80"
-    volumes:
-      - ./lb-conf/algo.conf:/etc/nginx/conf.d/algo.conf
+      - "7000:7000"
+      - "9102:9102"
     depends_on:
       - svc1
       - svc2
@@ -58,7 +57,7 @@ services:
       - app-network
 
   cadvisor:
-    image: gcr.io/cadvisor/cadvisor:latest
+    image: gcr.io/cadvisor/cadvisor-amd64:v0.50.0
     ports:
       - "8080:8080"
     volumes:
@@ -76,9 +75,14 @@ services:
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
-      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+      - GF_INSTALL_PLUGINS=grafana-clock-panel
+      - GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=grafana-clock-panel
+      - GF_ANALYTICS_CHECK_FOR_UPDATES=false
     volumes:
+      - grafana_data:/var/lib/grafana
       - ./grafana/dashboards:/var/lib/grafana/dashboards
+    depends_on:
+      - prometheus
     networks:
       - app-network
 
@@ -92,7 +96,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       - prometheus
-      - nginx
+      - lb
     networks:
       - app-network
 
@@ -102,10 +106,44 @@ services:
     ports:
       - "8089:8089"
     environment:
-      - LOCUST_HOST=http://nginx
+      - LOCUST_HOST=http://lb
     networks:
       - app-network
+
+  data-gen:
+    image: python:3.10-slim
+    container_name: data-gen
+    working_dir: /app
+    volumes:
+      - ./:/app
+    command: >
+      bash -c "
+        pip install --no-cache-dir requests prometheus-api-client pandas locust &&
+        python generate_dataset.py
+      "
+    depends_on:
+      - locust
+      - lb
+      - prometheus
+    networks:
+      - app-network
+
+  model-trainer:
+    build: ./meta-lb
+    container_name: model-trainer
+    working_dir: /app
+    volumes:
+      - ./:/app
+    command: ["python", "train_model.py"]
+    depends_on:
+      - data-gen
+    networks:
+      - app-network
+
 
 networks:
   app-network:
     driver: bridge
+
+volumes:
+  grafana_data:

@@ -39,3 +39,41 @@ docker-compose up --build
 - CPU و Memory از node-exporter
 - HTTP latency و throughput از Prometheus
 - نمایشگر الگوریتم فعلی load balancing
+
+## Retraining the ML model
+
+To retrain the model with new data:
+
+```powershell
+docker-compose run data-gen
+# After data collection is complete:
+docker-compose run model-trainer
+# Then restart the meta-lb service:
+docker-compose up -d --build meta-lb
+```
+
+### Scenarios
+- `ramp`: Gradually increasing traffic
+- `spike`: Sudden burst of traffic
+- `steady_high`: Constant high load
+- `steady_low`: Constant low load
+
+### Data Collection Window
+- For each scenario, each load balancing algorithm is tested for a fixed window (default: 10 seconds) after Nginx reload.
+- Metrics are collected from Prometheus after the window.
+
+### Label Definition
+- For each scenario, the algorithm with the lowest average latency is selected as the label for that sample.
+
+### Dataset Format
+- `dataset.csv` columns: `cpu,mem,latency,p95,throughput,connections,label`
+
+## Sample Git Commands
+
+```powershell
+git add generate_dataset.py train_model.py meta-lb/requirements.txt docker-compose.yml README.md
+# Commit your changes
+git commit -m "feat: add supervised data-collection & model-training pipeline"
+# Push to main branch
+git push origin main
+```

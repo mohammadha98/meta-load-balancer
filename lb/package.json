@@ -1,0 +1,14 @@
+{
+  "name": "meta-load-balancer",
+  "version": "1.0.0",
+  "description": "A custom Node.js load balancer",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.17.1",
+    "http-proxy": "^1.18.1",
+    "prom-client": "^13.2.0"
+  }
+}

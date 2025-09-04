@@ -16,11 +16,8 @@ ALGORITHM_GAUGE.labels(algorithm='ip_hash').set(0)
 
 # Load the ML model
 def load_model():
-    model_path = os.path.join(os.path.dirname(__file__), 'lb_model.pkl')
-    if not os.path.exists(model_path):
-        print("Model not found, generating a new one...")
-        from generate_model import generate_model
-        generate_model()
+    # Directly load the trained model from models/lb_model.pkl
+    model_path = os.path.join(os.path.dirname(__file__), 'models', 'lb_model.pkl')
     return joblib.load(model_path)
 
 # Get metrics from Prometheus
@@ -83,28 +80,45 @@ def update_nginx_config(algorithm_id):
         else:
             ALGORITHM_GAUGE.labels(algorithm=alg).set(0)
     
-    # Generate new algo.conf content
-    if algorithm == "round-robin":
-        config_content = "# Load balancing algorithm: round-robin\nserver svc1:80;\nserver svc2:80;\nserver svc3:80;\n"
-    elif algorithm == "least_conn":
-        config_content = "# Load balancing algorithm: least_conn\nleast_conn;\nserver svc1:80;\nserver svc2:80;\nserver svc3:80;\n"
-    elif algorithm == "ip_hash":
-        config_content = "# Load balancing algorithm: ip_hash\nip_hash;\nserver svc1:80;\nserver svc2:80;\nserver svc3:80;\n"
+    # Generate new algo.conf content for server directives only
+    server_content = "# Load balancing algorithm: " + algorithm + "\nserver svc1:80;\nserver svc2:80;\nserver svc3:80;\n"
     
-    # Write to algo.conf
+    # Write server directives to algo.conf
     with open('/etc/nginx/conf.d/algo.conf', 'w') as f:
-        f.write(config_content)
+        f.write(server_content)
     
-    print(f"Updated load balancing algorithm to: {algorithm}")
+    # Update default.conf with the appropriate algorithm directive
+    with open('/etc/nginx/conf.d/default.conf', 'r') as f:
+        default_conf = f.read()
     
-    # Reload Nginx
-    try:
-        subprocess.run(["nginx", "-s", "reload"], check=True)
-        print("Nginx reloaded successfully")
-    except subprocess.CalledProcessError as e:
-        print(f"Failed to reload Nginx: {e}")
+    # Remove any existing algorithm directives
+    default_conf = default_conf.replace("least_conn;", "# least_conn;")
+    default_conf = default_conf.replace("ip_hash;", "# ip_hash;")
+    
+    # Add the appropriate algorithm directive
+    if algorithm == "least_conn":
+        default_conf = default_conf.replace("# least_conn;", "least_conn;")
+    elif algorithm == "ip_hash":
+        default_conf = default_conf.replace("# ip_hash;", "ip_hash;")
+    
+    # Write the updated default.conf
+    with open('/etc/nginx/conf.d/default.conf', 'w') as f:
+        f.write(default_conf)
+    
+    # Prepare the JSON payload for the load balancer
+    payload = {
+        "algorithm": algorithm,
+        "backends": ["svc1:3000", "svc2:3000", "svc3:3000"]
+    }
 
-def main():
+    # Send the configuration to the load balancer
+    try:
+        response = requests.post("http://lb:7000/config", json=payload)
+        response.raise_for_status()
+        print(f"Updated load balancing algorithm to: {algorithm}")
+    except requests.exceptions.RequestException as e:
+        print(f"Failed to update load balancer configuration: {e}")
+
     # Start Prometheus metrics server
     start_http_server(8000)
     print("Prometheus metrics server started on port 8000")
